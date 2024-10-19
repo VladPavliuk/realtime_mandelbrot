@@ -111,36 +111,6 @@ renderRectVec_Float :: proc(position, size: float2, zValue: f32, color: float4) 
     directXState.ctx->DrawIndexed(directXState.indexBuffers[.QUAD].length, 0, 0)
 }
 
-renderImageRect :: proc{renderImageRectVec_Float, renderImageRectVec_Int, renderImageRect_Int}
-
-renderImageRect_Int :: proc(rect: Rect, zValue: f32, texture: TextureId) {
-    renderImageRectVec_Float({ f32(rect.left), f32(rect.bottom) }, 
-        { f32(rect.right - rect.left), f32(rect.top - rect.bottom) }, zValue, texture)
-}
-
-renderImageRectVec_Int :: proc(position, size: int2, zValue: f32, texture: TextureId) {
-    renderImageRectVec_Float({ f32(position.x), f32(position.y) }, { f32(size.x), f32(size.y) }, zValue, texture)
-}
-
-renderImageRectVec_Float :: proc(position, size: float2, zValue: f32, texture: TextureId) {
-    ctx := directXState.ctx
-
-    ctx->VSSetShader(directXState.vertexShaders[.BASIC], nil, 0)
-    ctx->VSSetConstantBuffers(0, 1, &directXState.constantBuffers[.PROJECTION].gpuBuffer)
-    ctx->VSSetConstantBuffers(1, 1, &directXState.constantBuffers[.MODEL_TRANSFORMATION].gpuBuffer)
-
-    ctx->PSSetShader(directXState.pixelShaders[.TEXTURE], nil, 0)
-    ctx->PSSetShaderResources(0, 1, &directXState.textures[texture].srv)
-
-    modelMatrix := getTransformationMatrix(
-        { position.x, position.y, zValue }, 
-        { 0.0, 0.0, 0.0 }, { size.x, size.y, 1.0 })
-
-    updateGpuBuffer(&modelMatrix, directXState.constantBuffers[.MODEL_TRANSFORMATION])
-
-    directXState.ctx->DrawIndexed(directXState.indexBuffers[.QUAD].length, 0, 0)
-}
-
 renderRectBorder :: proc{renderRectBorderVec_Float, renderRectBorderVec_Int, renderRectBorder_Int}
 
 renderRectBorder_Int :: proc(rect: Rect, thickness, zValue: f32, color: float4) {

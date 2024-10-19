@@ -8,34 +8,8 @@ import "base:runtime"
 
 import "core:mem"
 import "core:image"
-import "core:image/png" // since png module has autoload function, don't remove it!
-
-_ :: png._MAX_IDAT
 
 import "core:bytes"
-
-TextureId :: enum {
-    NONE,
-    FONT,
-    CIRCLE,
-    ICONS_ARRAY,
-    
-    CLOSE_ICON,
-    CHECK_ICON,
-
-    // file extensions icons
-    TXT_FILE_ICON,
-    C_FILE_ICON,
-    C_PLUS_PLUS_FILE_ICON,
-    C_SHARP_FILE_ICON,
-    JS_FILE_ICON,
-    ARROW_DOWN_ICON,
-    ARROW_RIGHT_ICON,
-
-    // explorer actions buttons icons
-    COLLAPSE_FILES_ICON,
-    JUMP_TO_CURRENT_FILE_ICON,
-}
 
 GpuTexture :: struct {
     buffer: ^d3d11.ITexture2D,    
@@ -103,8 +77,6 @@ GpuConstantBufferType :: enum {
 }
 
 initGpuResources :: proc() {
-    loadTextures()
-
     vertexShader, blob := compileVertexShader(#load("./shaders/basic_vs.hlsl"))
     defer blob->Release()
 
@@ -178,42 +150,6 @@ initGpuResources :: proc() {
 
 memoryAsSlice :: proc($T: typeid, pointer: rawptr, #any_int length: int) -> []T {
     return transmute([]T)runtime.Raw_Slice{pointer, length}
-}
-
-loadTextures :: proc() {
-    textures := map[TextureId]string{
-        .CLOSE_ICON = #load("./resources/images/close_icon.png"),
-        .CHECK_ICON = #load("./resources/images/check_icon.png"),
-        .CIRCLE = #load("./resources/images/circle.png"),
-        .TXT_FILE_ICON = #load("./resources/images/txt_file_icon.png"),
-        .C_FILE_ICON = #load("./resources/images/c_file_icon.png"),
-        .C_PLUS_PLUS_FILE_ICON = #load("./resources/images/c_plus_plus_file_icon.png"),
-        .C_SHARP_FILE_ICON = #load("./resources/images/c_sharp_file_icon.png"),
-        .JS_FILE_ICON = #load("./resources/images/js_file_icon.png"),
-        .ARROW_DOWN_ICON = #load("./resources/images/arrow_down.png"),
-        .ARROW_RIGHT_ICON = #load("./resources/images/arrow_right.png"),
-        .COLLAPSE_FILES_ICON = #load("./resources/images/collapse_files_icon.png"),
-        .JUMP_TO_CURRENT_FILE_ICON = #load("./resources/images/jump_current_file_icon.png"),
-    }
-    defer delete(textures)
-
-    for texture, data in textures {
-        directXState.textures[texture] = loadTextureFromImage(transmute([]u8)data)
-    }
-
-    directXState.textures[.ICONS_ARRAY] = initIcons2DTexture({ // 702 micoseconds
-        .CLOSE_ICON,
-        .CHECK_ICON,
-        .TXT_FILE_ICON,
-        .C_FILE_ICON,
-        .C_PLUS_PLUS_FILE_ICON,
-        .C_SHARP_FILE_ICON,
-        .JS_FILE_ICON,
-        .ARROW_DOWN_ICON,
-        .ARROW_RIGHT_ICON,
-        .COLLAPSE_FILES_ICON,
-        .JUMP_TO_CURRENT_FILE_ICON,
-    })
 }
 
 compileVertexShader :: proc(fileContent: string) -> (^d3d11.IVertexShader, ^d3d11.IBlob) {
@@ -439,100 +375,4 @@ createStructuredBuffer_NoInitData :: proc(length: u32, $T: typeid) -> GpuBuffer 
         strideSize = size_of(T),
         itemType = typeid_of(T),
     }
-}
-
-initIcons2DTexture :: proc(icons: []TextureId) -> GpuTexture {
-    for icon, index in icons {
-        directXState.iconsIndexesMapping[icon] = i32(index)
-    }
-
-    return createTexture2DArray(icons)
-}
-
-createTexture2DArray :: proc(textures: []TextureId) -> GpuTexture {
-    assert(len(textures) > 0)
-    arrayTexture: GpuTexture
-    texturesCount := u32(len(textures))
-    textureDesc: d3d11.TEXTURE2D_DESC
-    
-    // NOTE: this approach assumes that all images the same format
-    directXState.textures[textures[0]].buffer->GetDesc(&textureDesc)
-
-    textureDesc.ArraySize = texturesCount
-
-    // texture: ^d3d11.ITexture2D
-    hr := directXState.device->CreateTexture2D(&textureDesc, nil, &arrayTexture.buffer);
-    assert(hr == 0)
-
-    srvDesc := d3d11.SHADER_RESOURCE_VIEW_DESC {
-        Format = textureDesc.Format,
-        ViewDimension = .TEXTURE2DARRAY,
-        Texture2DArray = {
-            MostDetailedMip = 0,
-            MipLevels = 1,
-            ArraySize = texturesCount,
-            FirstArraySlice = 0,
-        },
-    }
-
-	hr = directXState.device->CreateShaderResourceView(arrayTexture.buffer, &srvDesc, &arrayTexture.srv);
-	assert(hr == 0)
-
-    // copy data into textures array
-    for textureId, index in textures {
-		directXState.ctx->CopySubresourceRegion(arrayTexture.buffer, u32(index), 0, 0, 0,
-            directXState.textures[textureId].buffer, 0, nil)
-    }
-
-    return arrayTexture
-}
-
-loadTextureFromImage :: proc(imageFileContent: []u8) -> GpuTexture {
-    parsedImage, imageErr := image.load_from_bytes(imageFileContent)
-    assert(imageErr == nil, "Couldn't parse image")
-    defer image.destroy(parsedImage)
-
-    image.alpha_add_if_missing(parsedImage)
-
-    bitmap := bytes.buffer_to_bytes(&parsedImage.pixels)
-
-    textureDesc := d3d11.TEXTURE2D_DESC{
-        Width = u32(parsedImage.width), 
-        Height = u32(parsedImage.height),
-        MipLevels = 1,
-        ArraySize = 1,
-        Format = dxgi.FORMAT.R8G8B8A8_UNORM,
-        SampleDesc = {
-            Count = 1,
-            Quality = 0,
-        },
-        Usage = d3d11.USAGE.DEFAULT,
-        BindFlags = { d3d11.BIND_FLAG.SHADER_RESOURCE },
-        CPUAccessFlags = {},
-        MiscFlags = {},
-    }
-
-    data := d3d11.SUBRESOURCE_DATA{
-        pSysMem = raw_data(bitmap),
-        SysMemPitch = u32(parsedImage.width * parsedImage.channels), // TODO: remove hardcoded 4 and actually compute it
-        SysMemSlicePitch = u32(parsedImage.width * parsedImage.height * parsedImage.channels),
-    }
-
-    texture: ^d3d11.ITexture2D
-    hr := directXState.device->CreateTexture2D(&textureDesc, &data, &texture)
-    assert(hr == 0)
-    
-    srvDesc := d3d11.SHADER_RESOURCE_VIEW_DESC{
-        Format = textureDesc.Format,
-        ViewDimension = d3d11.SRV_DIMENSION.TEXTURE2D,
-        Texture2D = {
-            MipLevels = 1,
-        },
-    }
-
-    srv: ^d3d11.IShaderResourceView
-    hr = directXState.device->CreateShaderResourceView(texture, &srvDesc, &srv)
-    assert(hr == 0)
-
-    return GpuTexture{ texture, srv, { i32(parsedImage.width), i32(parsedImage.height) } }
 }
