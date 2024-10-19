@@ -1,0 +1,5 @@
+bin/*.pdb
+bin/edi_state.json
+bin/shaders/*.fxc
+tests/*.exe
+tests/*.pdb
